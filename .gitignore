@@ -1,0 +1,33 @@
+# Build artifacts and dependency caches
+/final-agent
+/bin/
+/dist/
+*.exe
+*.test
+*.out
+node_modules/
+dist/
+.data/
+
+# Local credentials and environment overrides
+.env
+.env.*
+!.env.example
+!web/.env.development
+!web/.env.production
+*.local
+*.pem
+*.key
+
+# Local tools, editor settings and logs
+/.tools/
+/.publication/
+/.idea/
+/.vscode/
+/.worktrees/
+*.log
+
+# OS metadata
+.DS_Store
+Thumbs.db
+__MACOSX/
