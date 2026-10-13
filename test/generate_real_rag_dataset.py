@@ -236,7 +236,7 @@ def redact_credentials(value: str) -> str:
     value = re.sub(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)", "[REDACTED]", value, flags=re.DOTALL)
     value = re.sub(r"(?<![A-Za-z0-9_-])(?:sk-[A-Za-z0-9_-]{8,}|gh[pousr]_[A-Za-z0-9]{16,}|github_pat_[A-Za-z0-9_]{16,}|AKIA[A-Z0-9]{16})(?![A-Za-z0-9_-])", "[REDACTED]", value)
     value = re.sub(r"eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+", "[REDACTED]", value)
-    names = r"api[_-]?key|(?:jwt[_-]?|client[_-]?)?secret|(?:(?:access|refresh|auth)[_-]?)?token|password|passwd"
+    names = r"(?:[A-Za-z][A-Za-z0-9]*[_-])*(?:api[_-]?key|(?:jwt[_-]?|client[_-]?)?secret|(?:(?:access|refresh|auth)[_-]?)?token|password|passwd)"
     prefix = rf'''(?i)(?<!\w)((?:{names})["']?[ \t]*[:=][ \t]*)'''
     value = re.sub(prefix + r'''(["'])(?!\[REDACTED\])[^"'\r\n]*\2''', lambda match: f"{match[1]}{match[2]}[REDACTED]{match[2]}", value)
     value = re.sub(prefix + r'''(?!["'\[${<])[^\s"',;}]{4,}''', r"\1[REDACTED]", value)
