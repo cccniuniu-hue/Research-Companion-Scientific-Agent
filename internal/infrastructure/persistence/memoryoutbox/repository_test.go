@@ -223,7 +223,7 @@ func TestEnqueueRepairPreservesProvidedUUIDAndErrors(t *testing.T) {
 	}
 }
 func TestEnqueueRepairRejectsInvalidInput(t *testing.T) {
-	for _, point := range []string{"key", "target", "payload", "uuid"} {
+	for _, point := range []string{"key", "target", "payload", "uuid", "uuid_extra_separators"} {
 		repo, _ := outboxSetup(t)
 		e := repairEvent()
 		key := "key"
@@ -236,6 +236,8 @@ func TestEnqueueRepairRejectsInvalidInput(t *testing.T) {
 			e.Payload = []byte(`bad-json`)
 		case "uuid":
 			e.EventID = "repair-not-a-uuid"
+		case "uuid_extra_separators":
+			e.EventID = "--345678-1234-4234-8234-123456789abc"
 		}
 		if _, err := repo.EnqueueRepair(context.Background(), e, key); err == nil || !strings.HasPrefix(err.Error(), "outbox:") {
 			t.Fatalf("invalid %s not rejected before SQL: %v", point, err)
