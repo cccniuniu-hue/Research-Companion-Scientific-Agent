@@ -6,10 +6,17 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"github.com/milvus-io/milvus-proto/go-api/v2/commonpb"
+	"github.com/milvus-io/milvus-proto/go-api/v2/milvuspb"
+	"github.com/milvus-io/milvus-proto/go-api/v2/schemapb"
 	mc "github.com/milvus-io/milvus-sdk-go/v2/client"
 	"github.com/milvus-io/milvus-sdk-go/v2/entity"
+	"google.golang.org/grpc"
 	"math"
+	"net"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -475,5 +482,140 @@ func TestProjectionSerializesReadModifyWrite(t *testing.T) {
 	wg.Wait()
 	if s.max != 1 {
 		t.Fatalf("concurrent store cycles=%d", s.max)
+	}
+}
+
+// Run the real SDK iterator/decoder against an in-process service stub. Dialing
+// is disabled; no Milvus server or external network is used.
+type iteratorService struct {
+	milvuspb.MilvusServiceClient
+	t                     *testing.T
+	rows                  []int64
+	fail, malformed, weak bool
+	calls                 int
+}
+
+func (s *iteratorService) DescribeCollection(context.Context, *milvuspb.DescribeCollectionRequest, ...grpc.CallOption) (*milvuspb.DescribeCollectionResponse, error) {
+	schema := &entity.Schema{CollectionName: collection, Fields: []*entity.Field{{Name: "memory_id", DataType: entity.FieldTypeInt64, PrimaryKey: true}, {Name: "version", DataType: entity.FieldTypeInt64}, {Name: "content_hash", DataType: entity.FieldTypeVarChar}, {Name: "deleted", DataType: entity.FieldTypeBool}}}
+	level := commonpb.ConsistencyLevel_Strong
+	if s.weak {
+		level = commonpb.ConsistencyLevel_Bounded
+	}
+	return &milvuspb.DescribeCollectionResponse{Status: &commonpb.Status{}, CollectionID: 1, Schema: schema.ProtoMessage(), ConsistencyLevel: level}, nil
+}
+func (s *iteratorService) Query(_ context.Context, r *milvuspb.QueryRequest, _ ...grpc.CallOption) (*milvuspb.QueryResults, error) {
+	s.calls++
+	if s.fail {
+		return nil, errors.New("page RPC failed")
+	}
+	params := map[string]string{}
+	for _, p := range r.QueryParams {
+		params[p.Key] = p.Value
+	}
+	limit, _ := strconv.Atoi(params["limit"])
+	var after int64
+	_, _ = fmt.Sscanf(r.Expr, "memory_id > %d", &after)
+	ids := []int64{}
+	for _, id := range s.rows {
+		if id > after {
+			ids = append(ids, id)
+		}
+	}
+	ordered := params["iterator"] == "true" && params["reduce_stop_for_best"] == "true"
+	if ordered {
+		if r.GuaranteeTimestamp != mc.StrongTimestamp {
+			s.t.Error("iterator did not use strong consistency")
+		}
+	} else if len(ids) > 2 {
+		ids[1], ids[len(ids)-1] = ids[len(ids)-1], ids[1]
+	}
+	if len(ids) > limit {
+		ids = ids[:limit]
+	}
+	if s.malformed && len(ids) > 1 {
+		ids[0], ids[1] = ids[1], ids[0]
+	}
+	versions := make([]int64, len(ids))
+	hashes := make([]string, len(ids))
+	deleted := make([]bool, len(ids))
+	for i := range ids {
+		versions[i] = 1
+		hashes[i] = "h"
+		deleted[i] = ids[i] == 3
+	}
+	cols := vectorRows(ids, versions, hashes, deleted)
+	fields := make([]*schemapb.FieldData, 0, len(cols))
+	for _, c := range cols {
+		fields = append(fields, c.FieldData())
+	}
+	return &milvuspb.QueryResults{Status: &commonpb.Status{}, FieldsData: fields}, nil
+}
+func iteratorFixture(t *testing.T, service *iteratorService) *MilvusStore {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	c, err := mc.NewClient(ctx, mc.Config{Address: "127.0.0.1:1", DisableConn: true, DialOptions: []grpc.DialOption{grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return nil, errors.New("transport disabled") })}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = c.Close() })
+	c.(*mc.GrpcClient).Service = service
+	return NewMilvusStore(c, 2)
+}
+func TestMilvusIteratorPagesNeverSkipIDs(t *testing.T) {
+	svc := &iteratorService{t: t, rows: []int64{1, 2, 3, 4, 5}}
+	s := iteratorFixture(t, svc)
+	var got []int64
+	after := int64(0)
+	for i := 0; i < 5; i++ {
+		page, e := s.ListPage(context.Background(), after, 2)
+		if e != nil {
+			t.Fatal(e)
+		}
+		if len(page) == 0 {
+			break
+		}
+		for _, row := range page {
+			got = append(got, row.ID)
+			if row.ID == 3 && !row.Deleted {
+				t.Error("tombstone lost")
+			}
+		}
+		after = page[len(page)-1].ID
+	}
+	if !reflect.DeepEqual(got, []int64{1, 2, 3, 4, 5}) {
+		t.Fatalf("cursor skipped rows: %v", got)
+	}
+}
+func TestMilvusIteratorRejectsRPCAndUnorderedPages(t *testing.T) {
+	for _, kind := range []string{"rpc", "unordered"} {
+		t.Run(kind, func(t *testing.T) {
+			svc := &iteratorService{t: t, rows: []int64{1, 2}, fail: kind == "rpc", malformed: kind == "unordered"}
+			s := iteratorFixture(t, svc)
+			rows, e := s.ListPage(context.Background(), 0, 2)
+			if e == nil || len(rows) != 0 {
+				t.Fatalf("invalid page accepted: %+v %v", rows, e)
+			}
+		})
+	}
+}
+func TestMilvusIteratorHonorsCancellation(t *testing.T) {
+	svc := &iteratorService{t: t, rows: []int64{1, 2}}
+	s := iteratorFixture(t, svc)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, e := s.ListPage(ctx, 0, 2); !errors.Is(e, context.Canceled) {
+		t.Fatalf("err=%v", e)
+	}
+	if svc.calls != 0 {
+		t.Fatal("canceled scan queried")
+	}
+}
+func TestMilvusIteratorRequiresStrongCollection(t *testing.T) {
+	svc := &iteratorService{t: t, weak: true}
+	s := iteratorFixture(t, svc)
+	_, err := s.ListPage(context.Background(), 0, 2)
+	if err == nil || !strings.Contains(err.Error(), "strong") || svc.calls != 0 {
+		t.Fatalf("non-strong collection accepted: %v", err)
 	}
 }

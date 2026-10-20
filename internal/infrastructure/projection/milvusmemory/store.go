@@ -6,8 +6,8 @@ import (
 	"fmt"
 	mc "github.com/milvus-io/milvus-sdk-go/v2/client"
 	"github.com/milvus-io/milvus-sdk-go/v2/entity"
+	"io"
 	"math"
-	"sort"
 )
 
 const collection = "long_term_memory_vectors"
@@ -154,13 +154,35 @@ func validateColumns(rs mc.ResultSet) error {
 	return nil
 }
 func (s *MilvusStore) ListPage(ctx context.Context, after int64, limit int) ([]consistency.ProjectionState, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if s.client == nil {
 		return nil, fmt.Errorf("milvus unavailable")
 	}
 	if limit <= 0 {
 		return nil, fmt.Errorf("milvus: page limit must be positive")
 	}
-	rs, err := s.client.Query(ctx, collection, nil, fmt.Sprintf("memory_id > %d", after), []string{"memory_id", "version", "content_hash", "deleted"}, mc.WithLimit(int64(limit)), mc.WithSearchQueryConsistencyLevel(entity.ClStrong))
+	// The SDK iterator requests primary-key ordering on the server. Sorting a
+	// limited scalar result locally can permanently skip IDs between pages.
+	meta, err := s.client.DescribeCollection(ctx, collection)
+	if err != nil {
+		return nil, err
+	}
+	if meta == nil || meta.ConsistencyLevel != entity.ClStrong {
+		return nil, fmt.Errorf("milvus: ordered reconciliation requires a strong-consistency collection")
+	}
+	iterator, err := s.client.QueryIterator(ctx, mc.NewQueryIteratorOption(collection).WithExpr(fmt.Sprintf("memory_id > %d", after)).WithOutputFields("memory_id", "version", "content_hash", "deleted").WithBatchSize(limit))
+	if err != nil {
+		return nil, err
+	}
+	if iterator == nil {
+		return nil, fmt.Errorf("milvus: missing query iterator")
+	}
+	rs, err := iterator.Next(ctx)
+	if err == io.EOF {
+		return nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -172,9 +194,13 @@ func (s *MilvusStore) ListPage(ctx context.Context, after int64, limit int) ([]c
 		return nil, err
 	}
 	out := make([]consistency.ProjectionState, len(rows))
+	last := after
 	for i, r := range rows {
+		if r.ID <= last || r.Version < 0 || len(rows) > limit {
+			return nil, fmt.Errorf("milvus: unordered or invalid iterator page")
+		}
+		last = r.ID
 		out[i] = consistency.ProjectionState{ID: r.ID, Version: r.Version, ContentHash: r.Hash, Deleted: r.Deleted}
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out, nil
 }
