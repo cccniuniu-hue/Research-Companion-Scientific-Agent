@@ -1,17 +1,16 @@
 package memoryoutbox_test
 
 import (
+	"agi-assistant/internal/domain/memory/consistency"
+	"agi-assistant/internal/infrastructure/persistence/memoryoutbox"
 	"context"
 	"database/sql/driver"
 	"errors"
+	"github.com/DATA-DOG/go-sqlmock"
 	"regexp"
 	"strings"
 	"testing"
 	"time"
-
-	"agi-assistant/internal/domain/memory/consistency"
-	"agi-assistant/internal/infrastructure/persistence/memoryoutbox"
-	"github.com/DATA-DOG/go-sqlmock"
 )
 
 var outboxNow = time.Date(2026, 7, 26, 12, 0, 0, 0, time.UTC)
@@ -180,12 +179,12 @@ func TestEnqueueRepairUsesValidUUIDAndDedupeKey(t *testing.T) {
 	repo, m := outboxSetup(t)
 	e := repairEvent()
 	var generated string
-	m.ExpectExec(`ON CONFLICT \(repair_dedupe_key\) DO NOTHING`).WithArgs(repairUUID{&generated}, int64(41), "u1", int64(2), "upsert_memory_vector", "milvus", []byte(e.Payload), "repair-key").WillReturnResult(sqlmock.NewResult(1, 1))
+	m.ExpectExec(`ON CONFLICT \(repair_dedupe_key\) DO UPDATE`).WithArgs(repairUUID{&generated}, int64(41), "u1", int64(2), "upsert_memory_vector", "milvus", []byte(e.Payload), "repair-key").WillReturnResult(sqlmock.NewResult(1, 1))
 	ok, err := repo.EnqueueRepair(context.Background(), e, "repair-key")
 	if err != nil || !ok || generated == "" {
 		t.Fatalf("insert=%v err=%v", ok, err)
 	}
-	m.ExpectExec(`ON CONFLICT \(repair_dedupe_key\) DO NOTHING`).WithArgs(generated, int64(41), "u1", int64(2), "upsert_memory_vector", "milvus", []byte(e.Payload), "repair-key").WillReturnResult(sqlmock.NewResult(0, 0))
+	m.ExpectExec(`ON CONFLICT \(repair_dedupe_key\) DO UPDATE`).WithArgs(generated, int64(41), "u1", int64(2), "upsert_memory_vector", "milvus", []byte(e.Payload), "repair-key").WillReturnResult(sqlmock.NewResult(0, 0))
 	ok, err = repo.EnqueueRepair(context.Background(), e, "repair-key")
 	if err != nil || ok {
 		t.Fatalf("dedupe=%v err=%v", ok, err)
@@ -260,5 +259,23 @@ func TestUnavailableRepositoryReturnsErrors(t *testing.T) {
 	}
 	if _, e := repo.EnqueueRepair(context.Background(), repairEvent(), "key"); e == nil {
 		t.Fatal("nil db accepted")
+	}
+}
+
+func TestRepairRequeuesOnlyCompletedMatchingEvents(t *testing.T) {
+	for _, status := range []string{"new", "processed", "pending", "processing", "dead"} {
+		t.Run(status, func(t *testing.T) {
+			repo, m := outboxSetup(t)
+			e := repairEvent()
+			affected := int64(0)
+			if status == "new" || status == "processed" {
+				affected = 1
+			}
+			m.ExpectExec(`ON CONFLICT \(repair_dedupe_key\) DO UPDATE SET.*status='pending'.*attempts=0.*processed_at=NULL.*WHERE memory_outbox.status='processed'.*aggregate_id=EXCLUDED.aggregate_id.*aggregate_version=EXCLUDED.aggregate_version.*event_type=EXCLUDED.event_type.*target=EXCLUDED.target.*user_id=EXCLUDED.user_id`).WithArgs(repairUUID{}, e.AggregateID, e.UserID, e.AggregateVersion, string(e.Type), string(e.Target), []byte(e.Payload), "repair").WillReturnResult(sqlmock.NewResult(0, affected))
+			ok, err := repo.EnqueueRepair(context.Background(), e, "repair")
+			if err != nil || ok != (affected == 1) {
+				t.Fatalf("status=%s queued=%v err=%v", status, ok, err)
+			}
+		})
 	}
 }

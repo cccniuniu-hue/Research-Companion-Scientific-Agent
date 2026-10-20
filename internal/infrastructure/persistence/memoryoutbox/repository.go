@@ -136,9 +136,19 @@ func (r *Repository) EnqueueRepair(ctx context.Context, e consistency.OutboxEven
 		return false, fmt.Errorf("outbox: invalid event UUID")
 	}
 	// An orphan repair may have no user ID; its authoritative row no longer exists.
+	// A completed repair may be rearmed after fresh drift. In-flight and dead
+	// events retain their attempts/status; this does not bypass the retry limit.
 	res, err := r.db.ExecContext(ctx, `INSERT INTO memory_outbox
   (event_id,aggregate_id,user_id,aggregate_version,event_type,target,payload,repair_dedupe_key)
-  VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (repair_dedupe_key) DO NOTHING`,
+  VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (repair_dedupe_key) DO UPDATE SET
+  payload=EXCLUDED.payload,status='pending',attempts=0,available_at=NOW(),
+  locked_at=NULL,locked_by=NULL,processed_at=NULL,last_error=NULL
+  WHERE memory_outbox.status='processed'
+   AND memory_outbox.aggregate_id=EXCLUDED.aggregate_id
+   AND memory_outbox.aggregate_version=EXCLUDED.aggregate_version
+   AND memory_outbox.event_type=EXCLUDED.event_type
+   AND memory_outbox.target=EXCLUDED.target
+   AND memory_outbox.user_id=EXCLUDED.user_id`,
 		e.EventID, e.AggregateID, e.UserID, e.AggregateVersion, string(e.Type), string(e.Target), []byte(e.Payload), key)
 	if err != nil {
 		return false, err
