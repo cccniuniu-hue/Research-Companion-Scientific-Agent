@@ -44,6 +44,9 @@ type PrefHydrator func(userID string) map[string]string
 // stm/pref 字段保留为 nil 占位——所有访问必须走 STM(userID) / Pref(userID)
 // 工厂方法。这强制所有调用点显式带上 userID，避免回到"全局单例串号"。
 type memoryStack struct {
+	// 仅协调本实例的事务写入及缓存重载，不替代数据库版本校验。
+	commitMu sync.Mutex
+
 	stmMaxTurns int
 
 	stmMu       sync.RWMutex
