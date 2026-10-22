@@ -47,7 +47,7 @@ func (i MemInspection) Safe() bool { return i.Risk == MemRiskSafe }
 var piiPatterns = []namedPattern{
 	{"password_keyword", regexp.MustCompile(`(?i)(密\s*码|password|passwd|passphrase)\s*(是|为|=|:)\s*\S{3,}`)},
 	{"api_key", regexp.MustCompile(`(?i)(api[\s_\-]?key|access[\s_\-]?key|secret[\s_\-]?key)\s*(是|为|=|:)\s*\S{6,}`)},
-	{"token", regexp.MustCompile(`(?i)(token|bearer|jwt|access[\s_\-]?token|refresh[\s_\-]?token)\s*(是|为|=|:)?\s*[\w\-\.]{20,}`)},
+	{"token", regexp.MustCompile(`(?i)(token|bearer|jwt|access[\s_\-]?token|refresh[\s_\-]?token)\b\s*(是|为|=|:)?\s*[\w\-\.]{20,}`)},
 	{"private_key_block", regexp.MustCompile(`-----BEGIN(?:\s+(?:RSA|OPENSSH|DSA|EC|ENCRYPTED))?\s+PRIVATE\s+KEY-----`)},
 	{"id_card_cn", regexp.MustCompile(`\b\d{17}[\dXx]\b`)},                                                    // 中国身份证 18 位
 	{"credit_card", regexp.MustCompile(`\b(?:\d[ -]*?){13,19}\b`)},                                            // 13-19 位连续/分隔数字

@@ -5,6 +5,13 @@ import (
 	"testing"
 )
 
+func TestTokenKeywordDoesNotMatchLongOrdinaryWords(t *testing.T) {
+	text := "tokenization" + strings.Repeat("a", 30)
+	if got := inspectMemoryContent(text); !got.Safe() {
+		t.Fatalf("ordinary word matched credential keyword: %s", got.Reason)
+	}
+}
+
 // 凭证样本均为固定虚构输入；私钥样本只有头尾与无效正文 abc。
 // TestInspectMemoryContent_PII 验证常见 PII / 凭证模式被识别为 PII。
 func TestInspectMemoryContent_PII(t *testing.T) {

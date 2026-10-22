@@ -52,7 +52,7 @@ func (a *UnifiedAgent) extractMemoryFromUserMsg(userID, userMsg string) {
 	// 闸门 0：整段消息预检——含越狱/PII 模式的整体跳过，不调 LLM
 	if pre := inspectMemoryContent(userMsg); !pre.Safe() {
 		logger.L().Warn("memory-extract:user rejected whole msg",
-			"user_id", userID, "risk", pre.Risk, "reason", pre.Reason, "match", pre.Matched)
+			"user_id", userID, "risk", pre.Risk, "reason", pre.Reason)
 		return
 	}
 
@@ -88,7 +88,7 @@ func (a *UnifiedAgent) extractMemoryFromExchange(userID, userQuery, reply string
 	// 闸门 0b：AI 回答预检——AI 已被部分越狱时的最后一道防线
 	if pre := inspectMemoryContent(reply); !pre.Safe() {
 		logger.L().Warn("memory-extract:exchange rejected reply",
-			"user_id", userID, "risk", pre.Risk, "reason", pre.Reason, "match", pre.Matched)
+			"user_id", userID, "risk", pre.Risk, "reason", pre.Reason)
 		return
 	}
 
@@ -117,7 +117,7 @@ AI回答：` + reply
 // userID 是多租户隔离主键，写到 LTM/Pref 时强制带上。
 // source 仅用于日志区分两条调用路径；importance 由调用方根据来源传入。
 func (a *UnifiedAgent) runMemExtractAndStore(userID, source, prompt string, importance float64) {
-	if userID == "" {
+	if userID == "" || (source != "user" && source != "exchange") {
 		return
 	}
 	raw := a.llm.Chat("", []llm.Message{{Role: "user", Content: prompt}})
@@ -132,6 +132,7 @@ func (a *UnifiedAgent) runMemExtractAndStore(userID, source, prompt string, impo
 	}
 
 	for k, v := range kvs {
+		k, v = strings.TrimSpace(k), strings.TrimSpace(v)
 		if k == "" || v == "" {
 			continue
 		}
@@ -139,18 +140,11 @@ func (a *UnifiedAgent) runMemExtractAndStore(userID, source, prompt string, impo
 		// 闸门 1：单条 k-v 复检
 		if insp := inspectKVPair(k, v); !insp.Safe() {
 			logger.L().Warn("memory-extract kv rejected",
-				"source", source, "user_id", userID, "key", k,
-				"risk", insp.Risk, "reason", insp.Reason, "match", insp.Matched)
+				"source", source, "user_id", userID,
+				"risk", insp.Risk, "reason", insp.Reason)
 			continue
 		}
 
-		// preference 表只接收 user-source 的 k-v——exchange 派生不算用户偏好
-		if source == "user" {
-			if pref := a.mem.Pref(userID); pref != nil {
-				pref.Save(k, v)
-			}
-			a.repos.pref.Save(userID, k, v)
-		}
 		content := fmt.Sprintf("用户%s: %s", k, v)
 		if source == "exchange" {
 			// reply 派生改用更中性的开头，避免被误当成"用户陈述"
@@ -185,11 +179,20 @@ func (a *UnifiedAgent) runMemExtractAndStore(userID, source, prompt string, impo
 		})
 		if err != nil {
 			logger.L().Warn("memory-extract commit failed",
-				"source", source, "user_id", userID, "key", k, "err", err)
+				"source", source, "user_id", userID, "err", err)
 			continue
 		}
+		// 偏好仍是独立写入，但不能先于记忆检查和权威提交对外可见。
+		if source == "user" {
+			if pref := a.mem.Pref(userID); pref != nil {
+				pref.Save(k, v)
+			}
+			if a.repos.pref != nil {
+				a.repos.pref.Save(userID, k, v)
+			}
+		}
 		logger.L().Info("memory-extract stored",
-			"source", source, "user_id", userID, "key", k, "value", v,
+			"source", source, "user_id", userID,
 			"category", category, "importance", importance,
 			"memory_id", record.ID, "version", record.Version)
 
@@ -257,6 +260,18 @@ func (a *UnifiedAgent) llmClassifyMemory(content string) (category string, tags 
 	}
 	if err := json.Unmarshal([]byte(raw), &result); err != nil || result.Category == "" {
 		return "general", nil, ""
+	}
+	result.Category = strings.TrimSpace(result.Category)
+	switch result.Category {
+	case "identity", "preference", "fact", "episodic", "tool_failure", "policy", "general":
+	default:
+		return "general", nil, ""
+	}
+	result.SlotHint = strings.TrimSpace(result.SlotHint)
+	switch result.SlotHint {
+	case "profile", "planner", "task_memory", "tool_state", "constraints", "recall_memory":
+	default:
+		result.SlotHint = ""
 	}
 	return result.Category, result.Tags, result.SlotHint
 }
