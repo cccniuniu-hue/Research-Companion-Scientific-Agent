@@ -3,6 +3,7 @@ package promptctx
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 	"unicode/utf8"
@@ -49,11 +50,23 @@ func (b *TaskMemBuffer) Push(obs StepObservation) {
 	}
 }
 
-// Reset 清空缓冲区（新任务开始时调用）
+// Reset 清空全部缓冲，仅供管理或整体生命周期清理。
 func (b *TaskMemBuffer) Reset() {
 	b.mu.Lock()
 	b.buf = b.buf[:0]
 	b.mu.Unlock()
+}
+
+// ResetTask 清理一个用户的指定任务；空范围不执行清理。
+func (b *TaskMemBuffer) ResetTask(userID, taskID string) {
+	if userID == "" || taskID == "" {
+		return
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.buf = slices.DeleteFunc(b.buf, func(obs StepObservation) bool {
+		return obs.UserID == userID && obs.TaskID == taskID
+	})
 }
 
 // Snapshot 返回当前全部观察的只读副本
