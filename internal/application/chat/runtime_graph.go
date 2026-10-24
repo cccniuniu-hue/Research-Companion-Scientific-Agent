@@ -217,6 +217,14 @@ func (rt *GraphRuntime) Execute(ctx context.Context) *GraphResult {
 		}
 		rt.task.Graph = cloneTaskGraph(rt.graph)
 		rt.task.Steps = graphToTaskSteps(rt.graph)
+		rt.task.CurrentStep = -1
+		for i, step := range rt.task.Steps {
+			if step.Status == StepPending || step.Status == StepRunning || step.Status == StepInterrupted {
+				break
+			}
+			rt.task.CurrentStep = i
+		}
+
 		rt.agent.runtime.publishTask(rt.task)
 		rt.agent.saveSnapshot(rt.task)
 
@@ -337,7 +345,7 @@ func (rt *GraphRuntime) raceGroup(ctx context.Context, g raceGroup, wg *sync.Wai
 				}))
 				rt.emitEvent(NewStreamEvent("step", ReActStep{
 					Type: StepObservation, Content: r.result,
-					Tool: executorName(node), Params: node.Params,
+					Tool: executorName(node), Params: maps.Clone(node.Params),
 				}))
 			}
 		} else if !winnerFound {

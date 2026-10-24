@@ -193,7 +193,7 @@ func TestSearchRejectsBlankOrNonStringQuery(t *testing.T) {
 	cfg := &config.APIConfig{}
 	search := builtinSearchTool(cfg, llm.New(cfg))
 	for _, query := range []interface{}{nil, "", " \t\n", 42} {
-		t.Run(strings.TrimSpace(jsonString(query)), func(t *testing.T) {
+		t.Run(strings.TrimSpace(searchFixtureJSON(query)), func(t *testing.T) {
 			result, err := search.Execute(map[string]interface{}{"query": query})
 			if err == nil || result != "" {
 				t.Fatalf("invalid query accepted: %q %v", result, err)
@@ -202,7 +202,7 @@ func TestSearchRejectsBlankOrNonStringQuery(t *testing.T) {
 	}
 }
 
-func jsonString(v interface{}) string { b, _ := json.Marshal(v); return string(b) }
+func searchFixtureJSON(v interface{}) string { b, _ := json.Marshal(v); return string(b) }
 
 func TestSearchLabelsOfflineFallback(t *testing.T) {
 	cfg := &config.APIConfig{}

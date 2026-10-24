@@ -125,6 +125,9 @@ func (a *UnifiedAgent) fillParamsFromPreference(userID string, tc *tool.CallResu
 	if len(prefs) == 0 {
 		return
 	}
+	if tc.Params == nil {
+		tc.Params = make(map[string]interface{})
+	}
 	// 偏好 key → 工具参数名的映射
 	prefToParam := map[string][]string{
 		"城市": {"city", "location", "location_name"},
