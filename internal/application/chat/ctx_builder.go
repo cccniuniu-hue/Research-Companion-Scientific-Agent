@@ -23,10 +23,8 @@ func (a *UnifiedAgent) buildContextPrefix(ctx context.Context, query string, mod
 	emb, _ := a.llm.EmbedContext(ctx, query)
 	userID := usercontext.UserIDFromContext(ctx)
 	taskID := ""
-	if mode == "react" && userID != "" && a.runtime != nil {
-		if t := a.currentTask(); t != nil && t.UserID == userID {
-			taskID = t.TaskID
-		}
+	if mode == "react" {
+		taskID = taskIDFromContext(ctx)
 	}
 	return a.pctx.assemble(ctx, promptctx.Query{
 		Text:      query,

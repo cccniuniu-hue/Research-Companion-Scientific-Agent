@@ -20,7 +20,7 @@ func (a *UnifiedAgent) registerCancel(cancel context.CancelFunc) func() {
 	return a.runtime.registerCancel(cancel)
 }
 
-// currentTask 读取任务引用；任务字段的并发读写仍需运行模块同步。
+// currentTask 读取独立任务快照，避免读取者修改运行状态。
 func (a *UnifiedAgent) currentTask() *TaskState {
 	return a.runtime.currentTask()
 }
