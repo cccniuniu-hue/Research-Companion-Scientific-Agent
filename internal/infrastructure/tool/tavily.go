@@ -6,15 +6,24 @@ package toolimpl
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // TavilySearch 调用 Tavily Search API，返回格式化的搜索结果摘要。
 // apiURL 为空时使用官方默认地址。
 func TavilySearch(query, apiKey, apiURL string) (string, error) {
+	return TavilySearchContext(context.Background(), query, apiKey, apiURL)
+}
+
+var tavilyHTTPClient = &http.Client{Timeout: 30 * time.Second}
+
+// TavilySearchContext 将请求取消和截止时间传递到搜索 HTTP 调用。
+func TavilySearchContext(ctx context.Context, query, apiKey, apiURL string) (string, error) {
 	if apiURL == "" {
 		apiURL = "https://api.tavily.com/search"
 	}
@@ -24,7 +33,12 @@ func TavilySearch(query, apiKey, apiURL string) (string, error) {
 		"search_depth": "basic",
 		"max_results":  5,
 	})
-	resp, err := http.Post(apiURL, "application/json", bytes.NewReader(body)) //nolint
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, bytes.NewReader(body))
+	if err != nil {
+		return "", fmt.Errorf("Tavily 请求失败: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := tavilyHTTPClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("Tavily 请求失败: %w", err)
 	}

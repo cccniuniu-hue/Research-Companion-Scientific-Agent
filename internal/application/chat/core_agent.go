@@ -211,35 +211,40 @@ func (a *UnifiedAgent) registerBuiltinTools() {
 
 // builtinSearchTool 构造搜索能力，注册和执行使用同一个工具定义。
 func builtinSearchTool(cfg *config.APIConfig, client *llm.Client) tool.Tool {
-	// Tavily 优先 + LLM 知识降级（替换默认 mock search_web）
-	return tool.Tool{
-		Name:        "search_web",
-		Description: "搜索互联网获取最新信息",
-		Parameters: []tool.Param{
-			{Name: "query", Type: "string", Description: "搜索关键词", Required: true},
-		},
-		Execute: func(params map[string]interface{}) (string, error) {
-			q, _ := params["query"].(string)
-			q = strings.TrimSpace(q)
-			if q == "" {
-				return "", fmt.Errorf("搜索关键词不能为空")
-			}
-			if cfg.SearchAPIKey != "" {
-				if result, err := toolimpl.TavilySearch(q, cfg.SearchAPIKey, cfg.SearchAPIURL); err == nil {
-					return result, nil
-				} else {
-					logger.L().Warn("Tavily search failed, falling back to LLM", "query", q, "err", err)
+	execute := func(ctx context.Context, params map[string]interface{}) (string, error) {
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
+		q, _ := params["query"].(string)
+		q = strings.TrimSpace(q)
+		if q == "" {
+			return "", fmt.Errorf("搜索关键词不能为空")
+		}
+		if cfg.SearchAPIKey != "" {
+			if result, err := toolimpl.TavilySearchContext(ctx, q, cfg.SearchAPIKey, cfg.SearchAPIURL); err == nil {
+				return result, nil
+			} else {
+				if ctx.Err() != nil {
+					return "", ctx.Err()
 				}
+				logger.C(ctx).Warn("Tavily search failed, falling back to LLM", "query", q, "err", err)
 			}
-			notice := "未获取实时搜索结果，以下回答未经实时核验。"
-			if !cfg.IsRealLLM() {
-				notice = "未获取实时搜索结果，以下为本地演示回答。"
-			}
-			return notice + "\n" + client.Chat(
-				"实时搜索不可用。请基于已有知识回答，并明确不确定性；不要声称已检索或核验最新信息。",
-				[]llm.Message{{Role: "user", Content: "搜索：" + q}},
-			), nil
-		},
+		}
+		notice := "未获取实时搜索结果，以下回答未经实时核验。"
+		if !cfg.IsRealLLM() {
+			notice = "未获取实时搜索结果，以下为本地演示回答。"
+		}
+		answer := client.ChatContext(ctx, "实时搜索不可用。请基于已有知识回答，并明确不确定性；不要声称已检索或核验最新信息。", []llm.Message{{Role: "user", Content: "搜索：" + q}})
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
+		return notice + "\n" + answer, nil
+	}
+	return tool.Tool{
+		Name: "search_web", Description: "搜索互联网获取最新信息",
+		Parameters: []tool.Param{{Name: "query", Type: "string", Description: "搜索关键词", Required: true}},
+		ExecuteCtx: execute,
+		Execute:    func(params map[string]interface{}) (string, error) { return execute(context.Background(), params) },
 	}
 }
 
