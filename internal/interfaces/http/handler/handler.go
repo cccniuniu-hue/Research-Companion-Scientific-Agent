@@ -53,6 +53,9 @@ type Server struct {
 //
 // 中间件顺序（外→内）：RequestID → PanicRecover → AccessLog → CORS → [RequireAuth]
 func New(a *chat.UnifiedAgent, authSvc *authapp.Service, issuer *authdomain.TokenIssuer, cfg *config.APIConfig, skills *skillapp.Service) *Server {
+	if cfg == nil || cfg.PprofEnabled && cfg.PprofAdminToken == "" {
+		panic("HTTP server requires config and an admin token when pprof is enabled")
+	}
 	s := &Server{agent: a, auth: authSvc, issuer: issuer, cfg: cfg, skills: skills}
 	r := chi.NewRouter()
 
@@ -667,6 +670,9 @@ func writeJSON(w http.ResponseWriter, v interface{}) {
 // Management uses the configured admin token even when pprof itself is disabled.
 // Empty configuration fails closed; a verified JWT is also required by /api.
 func (s *Server) isAdmin(r *http.Request) bool {
+	if len(r.Header.Values("X-Admin-Token")) != 1 {
+		return false
+	}
 	expected := s.cfg.PprofAdminToken
 	return expected != "" && subtle.ConstantTimeCompare([]byte(expected), []byte(r.Header.Get("X-Admin-Token"))) == 1
 }
