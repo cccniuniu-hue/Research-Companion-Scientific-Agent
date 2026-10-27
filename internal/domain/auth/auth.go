@@ -159,14 +159,14 @@ func (t *TokenIssuer) Verify(tokenStr string) (*Claims, error) {
 			return nil, errors.New("unexpected signing method")
 		}
 		return t.secret, nil
-	})
+	}, jwt.WithIssuer(t.issuer), jwt.WithExpirationRequired())
 	if err != nil {
 		if errors.Is(err, jwt.ErrTokenExpired) {
 			return nil, ErrTokenExpired
 		}
 		return nil, ErrInvalidToken
 	}
-	if !tok.Valid {
+	if !tok.Valid || claims.UserID() <= 0 {
 		return nil, ErrInvalidToken
 	}
 	return claims, nil
