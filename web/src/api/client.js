@@ -4,14 +4,22 @@
 const BASE = import.meta.env.VITE_API_BASE || ''
 
 let unauthorizedHandler = null
-export function setUnauthorizedHandler(fn) { unauthorizedHandler = fn }
+let currentIdentity = () => true
+export function setUnauthorizedHandler(fn, check = () => true) { unauthorizedHandler = fn; currentIdentity = check }
 
-export function getToken() { return localStorage.getItem('agi_auth_token') || '' }
+export function getToken() {
+  try { return localStorage.getItem('agi_auth_token') || '' } catch { return '' }
+}
 
 export async function apiFetch(path, options = {}) {
   const headers = new Headers(options.headers || {})
   const { auth = true, ...request } = options
   const tok = auth ? getToken() : ''
+  // 其他标签页换号后，旧页面不能用新账号身份派发旧用户的操作。
+  if (auth && !currentIdentity(tok)) {
+    if (unauthorizedHandler) unauthorizedHandler()
+    throw Object.assign(new Error('unauthorized'), { status: 401 })
+  }
   if (tok) headers.set('Authorization', 'Bearer ' + tok)
   const resp = await fetch(BASE + path, { ...request, headers })
   if (auth && resp.status === 401) {

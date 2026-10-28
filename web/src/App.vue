@@ -41,7 +41,7 @@ const skillHubOpen = ref(false)
 setUnauthorizedHandler(() => {
   chat.abortInflight()
   auth.logout()
-})
+}, token => token === auth.token)
 
 // 只有服务端确认的身份才能恢复本地会话；切换身份同步清理可见状态。
 watch(() => auth.userId, (id) => {
