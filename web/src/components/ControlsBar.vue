@@ -34,6 +34,7 @@ const auth = useAuth()
 button:disabled { cursor: not-allowed; opacity: .7; }
 button:focus-visible { outline: 2px solid var(--primary-d); outline-offset: 2px; }
 .controls-bar { flex-wrap: wrap; }
+@media (max-width: 640px) { .controls-bar { padding: 8px 12px 8px 100px; min-height: 60px; } }
 .controls-right.hint-primary { color: var(--primary-d); }
 .controls-right.hint-pink { color: var(--pink-d); }
 .controls-right.hint-muted { color: var(--text3); }

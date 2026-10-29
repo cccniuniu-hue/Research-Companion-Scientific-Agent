@@ -1,6 +1,6 @@
 <template>
   <div class="auth-overlay show" @keydown="onKey">
-    <form class="auth-card" role="dialog" aria-modal="true" aria-labelledby="auth-title" ref="card" @submit.prevent="submit">
+    <form class="auth-card" role="dialog" aria-modal="true" aria-labelledby="auth-title" tabindex="-1" ref="card" @submit.prevent="submit">
       <div class="auth-title" id="auth-title">Research Companion</div>
       <div class="auth-sub">{{ auth.mode === 'login' ? '登录以使用专属记忆' : '创建一个新账号' }}</div>
 
@@ -28,7 +28,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { useAuth } from '../stores/auth'
 
 const auth = useAuth()
@@ -42,11 +42,13 @@ onMounted(() => {
   usernameInput.value?.focus()
 })
 onBeforeUnmount(() => previousFocus?.focus())
+watch(() => auth.submitting, async busy => { await nextTick(); (busy ? card.value : usernameInput.value)?.focus() })
 
 function onKey(e) {
   if (e.key === 'Enter' && (e.isComposing || e.keyCode === 229)) e.preventDefault()
   if (e.key !== 'Tab' || typeof document === 'undefined') return
   const fields = [...card.value.querySelectorAll('button:not(:disabled), input:not(:disabled)')]
+  if (!fields.length) { e.preventDefault(); return }
   const first = fields[0], last = fields.at(-1)
   if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus() }
   else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus() }
@@ -64,4 +66,8 @@ async function submit() {
 button:focus-visible { outline: 2px solid var(--primary-d); outline-offset: 2px; }
 button:disabled { cursor: wait; }
 .auth-field input { font-size: 16px; }
+.auth-card { max-width: calc(100vw - 24px); max-height: calc(100dvh - 24px); overflow-y: auto; }
+.auth-sub { color: var(--text2); font-size: 14px; }
+.auth-error { color: #b91c1c; font-size: 14px; }
+.auth-field input::placeholder { color: #64748b; opacity: 1; }
 </style>

@@ -1,5 +1,7 @@
 <template>
-  <aside class="sidebar">
+  <button type="button" class="sidebar-toggle" aria-label="对话与文档菜单" aria-controls="conversation-sidebar" :aria-expanded="mobileOpen" @click="mobileOpen = !mobileOpen" @keydown.esc="mobileOpen = false">{{ mobileOpen ? '收起菜单' : '对话菜单' }}</button>
+  <button v-if="mobileOpen" type="button" class="sidebar-backdrop" aria-label="关闭菜单" @click="mobileOpen = false"></button>
+  <aside id="conversation-sidebar" class="sidebar" :class="{ 'mobile-open': mobileOpen }" @keydown.esc="mobileOpen = false">
     <div class="sidebar-logo">
       <div class="logo-mark">◈</div>
       <div>
@@ -88,6 +90,7 @@ const auth = useAuth()
 const chat = useChat()
 const fileInput = ref(null)
 const dragging = ref(false)
+const mobileOpen = ref(false)
 const busy = ref(false)
 const actionError = ref('')
 const blocked = computed(() => busy.value || docs.forbidden || !auth.loggedIn)
@@ -118,10 +121,10 @@ async function onDrop(e) { dragging.value = false; await upload(Array.from(e.dat
 function docTitle(d) { return `${d.name}${d.pages ? ' · ' + d.pages + ' 页' : ''}${d.textChars ? ' · ' + d.textChars + ' 字' : ''}${d.parser ? ' · ' + d.parser : ''}` }
 async function removeDoc(d) { if (!blocked.value && confirm('确定删除共享文档「' + d.name + '」？')) await run(() => docs.deleteDoc(d.docHash)) }
 function fmtDate(ts) { return new Date(ts).toLocaleDateString('zh', { month: 'short', day: 'numeric' }) }
-function switchTo(id) { chat.abortInflight(); sessions.switchSession(id) }
+function switchTo(id) { chat.abortInflight(); sessions.switchSession(id); mobileOpen.value = false }
 function del(id) { if (id === sessions.currentId) chat.abortInflight(); sessions.deleteSession(id) }
-function newChat() { chat.abortInflight(); sessions.newSession() }
-function logout() { chat.abortInflight(); auth.logout() }
+function newChat() { chat.abortInflight(); sessions.newSession(); mobileOpen.value = false }
+function logout() { chat.abortInflight(); auth.logout(); mobileOpen.value = false }
 </script>
 
 <style scoped>
@@ -129,11 +132,19 @@ function logout() { chat.abortInflight(); auth.logout() }
 .text-button, .icon-button { background: transparent; border: 0; font: inherit; color: inherit; cursor: pointer; text-align: left; }
 .text-button { min-width: 0; padding: 0; }
 .icon-button { flex-shrink: 0; }
-.access-note, .sidebar-error { font-size: 12px; line-height: 1.6; padding: 0 14px; overflow-wrap: anywhere; }
+.access-note, .sidebar-error { font-size: 14px; line-height: 1.6; padding: 0 14px; overflow-wrap: anywhere; }
 .access-note { color: var(--text2); }
-.sidebar-error { color: var(--red); }
+.sidebar-error { color: #b91c1c; }
 button:disabled { opacity: .6; cursor: not-allowed; }
 button:focus-visible { outline: 2px solid var(--primary-d); outline-offset: 2px; }
 .session-item:focus-within .sess-del { opacity: 1; }
 .logo-name { overflow-wrap: anywhere; }
+.sidebar-toggle, .sidebar-backdrop { display: none; }
+@media (max-width: 640px) {
+  .sidebar-toggle { display: block; position: fixed; top: 10px; left: 10px; z-index: 70; min-height: 40px; padding: 0 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--card-solid); color: var(--text); font: inherit; }
+  .sidebar { position: fixed; inset: 0 auto 0 0; width: min(290px, calc(100vw - 48px)); min-width: 0; z-index: 60; padding-top: 56px; background: var(--card-solid); overflow-y: auto; transform: translateX(-100%); visibility: hidden; }
+  .sidebar.mobile-open { transform: translateX(0); visibility: visible; }
+  .sidebar-backdrop { display: block; position: fixed; inset: 0; z-index: 55; border: 0; background: rgba(15, 23, 42, .4); }
+  .recent { min-height: 100px; }
+}
 </style>

@@ -39,4 +39,8 @@ const rendered = computed(() => renderMarkdown(props.msg.answer || props.msg.htm
 .bubble.user { white-space: pre-wrap; }
 .msg-body { min-width: 0; }
 .answer-text, .bubble.user, .memory-content { overflow-wrap: anywhere; }
+@media (max-width: 640px) {
+  .msg-body { max-width: calc(100% - 42px); }
+  .answer-text, .bubble.user { font-size: 16px; }
+}
 </style>
