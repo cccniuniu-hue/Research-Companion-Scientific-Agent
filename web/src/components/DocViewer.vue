@@ -28,6 +28,10 @@ const docs = useDocs()
 const dialog = ref(null)
 const closeButton = ref(null)
 let previousFocus
+// 入库按钮禁用时浏览器会移走焦点，保留在仍可操作的关闭按钮上。
+watch(() => docs.viewer.ingesting, async busy => {
+  if (busy) { await nextTick(); if (docs.viewer.open) closeButton.value?.focus() }
+})
 watch(() => docs.viewer.open, async open => {
   if (open) previousFocus = typeof document === 'undefined' ? null : document.activeElement
   await nextTick()
