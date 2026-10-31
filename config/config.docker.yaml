@@ -1,0 +1,116 @@
+# Container-only endpoints; supply secrets through process environment.
+# Mock sandbox does not execute commands. No Docker socket is mounted.
+llm:
+  api_url: https://open.bigmodel.cn/api/paas/v4/chat/completions
+  api_key: ${LLM_API_KEY}
+  model: glm-5.1
+  fast_model: glm-4.7-flash
+  temperature: 1.0
+embedding:
+  api_url: https://open.bigmodel.cn/api/paas/v4/embeddings
+  api_key: ${EMBEDDING_API_KEY}
+  model: embedding-3
+milvus:
+  host: milvus
+  port: 19530
+postgres:
+  host: postgres
+  port: 5432
+  user: aiagent
+  password: ${POSTGRES_PASSWORD}
+  database: aiagent
+elasticsearch:
+  addresses:
+  - http://elasticsearch:9200
+  username: ''
+  password: ''
+kafka:
+  brokers:
+  - kafka:9092
+  topic: agent-events
+rag:
+  chunk_size: 200
+  chunk_overlap: 50
+  top_k: 3
+  rrf_constant_k: 60
+  semantic_weight: 0.7
+  enable_hybrid_search: true
+  rag_milvus_dim: 2048
+  rewrite:
+    enabled: true
+    num_queries: 3
+  rerank:
+    enabled: true
+    preview_len: 200
+memory:
+  short_term_max_turns: 5
+  long_term_top_k: 3
+  consolidation:
+    similarity_threshold: 0.8
+    dedup_threshold: 0.95
+    ttl_days: 30
+    decay_rate: 0.995
+    min_importance: 0.3
+    trigger_interval: 5
+harness:
+  max_retries: 3
+  retry_delay_ms: 200
+  step_timeout_ms: 5000
+  max_iterations: 5
+server:
+  port: '8090'
+search:
+  api_key: ${TAVILY_API_KEY}
+  api_url: https://api.tavily.com/search
+neo4j:
+  uri: bolt://neo4j:7687
+  user: neo4j
+  password: ${NEO4J_PASSWORD}
+  max_hops: 2
+  weight: 0.3
+  enabled: true
+sandbox:
+  enabled: true
+  backend: mock
+  image: ubuntu:22.04
+  timeout_ms: 30000
+  max_output_bytes: 65536
+  memory_limit_mb: 256
+  cpu_percent: 50
+  max_pids: 64
+  network_disabled: true
+  readonly_rootfs: true
+  artifact_host_dir: /app/.data/artifacts
+security:
+  max_command_length: 500
+  allowlist_mode: false
+  allowlist:
+  - ls
+  - cat
+  - echo
+  - pwd
+  - date
+  - python3
+  - node
+  - go
+  - java
+graph_runtime:
+  max_parallel: 2
+  race_timeout_ms: 30000
+  enable_racing: true
+  replan_enabled: true
+  max_replan: 2
+  replan_on_failed: true
+auth:
+  jwt_secret: ${JWT_SECRET}
+  jwt_ttl_hours: 168
+  jwt_issuer: agi-assistant
+observability:
+  pprof:
+    enabled: false
+    admin_token: ${PPROF_ADMIN_TOKEN}
+skillhub:
+  enabled: true
+  github_token: ${GITHUB_TOKEN}
+  keyword: office assistant
+  cache_ttl_min: 30
