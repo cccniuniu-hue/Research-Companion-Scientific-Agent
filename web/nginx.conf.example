@@ -1,0 +1,25 @@
+# Local same-origin deployment template. Add TLS and access policy before public use.
+server {
+    listen 127.0.0.1:8080;
+    server_name localhost;
+    root /srv/research-companion/web/dist;
+    index index.html;
+    client_max_body_size 32m;
+
+    location / { try_files $uri $uri/ /index.html; }
+    location /api/ {
+        proxy_pass http://127.0.0.1:8090;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        # Same-origin browser deployment; backend's developer wildcard is not a public policy.
+        proxy_hide_header Access-Control-Allow-Origin;
+        proxy_hide_header Access-Control-Allow-Credentials;
+        # Never inject a shared X-Admin-Token into ordinary browser requests.
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 600s;
+    }
+    location = /healthz { proxy_pass http://127.0.0.1:8090; }
+    location = /readyz { proxy_pass http://127.0.0.1:8090; }
+}
